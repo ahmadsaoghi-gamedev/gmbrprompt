@@ -1,17 +1,17 @@
 import { ImageAnalysis, APIResponse } from '../types';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_API_URL = import.meta.env.VITE_GEMINI_BASE_URL + "/v1beta/models/gemini-2.0-flash:generateContent";
+const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
+const OPENROUTER_API_URL = import.meta.env.VITE_OPENROUTER_BASE_URL + "/v1/chat/completions";
 
-export class GeminiService {
-  private static instance: GeminiService;
+export class OpenRouterService {
+  private static instance: OpenRouterService;
   private rateLimitDelay = 1000; // 1 second between requests
 
-  static getInstance(): GeminiService {
-    if (!GeminiService.instance) {
-      GeminiService.instance = new GeminiService();
+  static getInstance(): OpenRouterService {
+    if (!OpenRouterService.instance) {
+      OpenRouterService.instance = new OpenRouterService();
     }
-    return GeminiService.instance;
+    return OpenRouterService.instance;
   }
 
   async analyzeImage(imageBase64: string): Promise<APIResponse> {
@@ -32,39 +32,48 @@ export class GeminiService {
       
       Be specific and detailed to help generate accurate AI image prompts.`;
 
-      const apiKey = GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error('Gemini API key is not configured');
+      if (!OPENROUTER_API_KEY) {
+        throw new Error('OpenRouter API key is not configured');
       }
-const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+
+      const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              {
-                inline_data: {
-                  mime_type: "image/jpeg",
-                  data: imageBase64.split(',')[1]
+          model: "anthropic/claude-3-opus",
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: prompt
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:image/jpeg;base64,${imageBase64.split(',')[1]}`
+                  }
                 }
-              }
-            ]
-          }]
+              ]
+            }
+          ],
+          max_tokens: 2000
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`);
+        throw new Error(`OpenRouter API error: ${response.status}`);
       }
 
       const data = await response.json();
-      const analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const analysisText = data.choices?.[0]?.message?.content;
       
       if (!analysisText) {
-        throw new Error('No analysis text received from Gemini');
+        throw new Error('No analysis text received from OpenRouter');
       }
 
       // Extract JSON from the response
@@ -77,7 +86,7 @@ const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       return { success: true, data: analysis };
 
     } catch (error) {
-      console.error('Gemini analysis error:', error);
+      console.error('OpenRouter analysis error:', error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error occurred' 
@@ -104,24 +113,28 @@ const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
         "tips": "platform-specific tips"
       }`;
 
-      const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
+          model: "anthropic/claude-3-opus",
+          messages: [{
+            role: "user",
+            content: prompt
+          }],
+          max_tokens: 2000
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`);
+        throw new Error(`OpenRouter API error: ${response.status}`);
       }
 
       const data = await response.json();
-      const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const responseText = data.choices?.[0]?.message?.content;
       
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
@@ -132,7 +145,7 @@ const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       return { success: true, data: result };
 
     } catch (error) {
-      console.error('Gemini prompt generation error:', error);
+      console.error('OpenRouter prompt generation error:', error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to generate prompt' 
@@ -154,5 +167,61 @@ const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
 
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async enhancePrompt(prompt: string, platform: string): Promise<APIResponse> {
+    try {
+      await this.delay(this.rateLimitDelay);
+
+      const enhancementPrompt = `Optimize this AI image prompt for ${platform}:
+      
+      Original Prompt: ${prompt}
+
+      Return a JSON response with:
+      {
+        "enhancedPrompt": "optimized version",
+        "improvements": "list of specific improvements made",
+        "negativePrompt": "suggested negative prompt if applicable",
+        "tips": "platform-specific optimization tips"
+      }`;
+
+      const response = await fetch(`${OPENROUTER_API_URL}?key=${OPENROUTER_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "anthropic/claude-3-opus",
+          messages: [{
+            role: "user",
+            content: enhancementPrompt
+          }],
+          max_tokens: 2000
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenRouter API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const responseText = data.choices?.[0]?.message?.content;
+      
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No valid JSON found in response');
+      }
+
+      const result = JSON.parse(jsonMatch[0]);
+      return { success: true, data: result };
+
+    } catch (error) {
+      console.error('OpenRouter prompt enhancement error:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to enhance prompt' 
+      };
+    }
   }
 }
